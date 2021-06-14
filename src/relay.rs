@@ -45,41 +45,60 @@ pub async fn run(config: RelayConfig, remote_ip: Arc<RwLock<IpAddr>>) {
         format!("{}:{}", config.listening_address, config.listening_port)
             .parse()
             .unwrap();
-    let tcp_listener = net::TcpListener::bind(&client_socket).await.unwrap();
 
     let mut remote_socket: SocketAddr =
         format!("{}:{}", remote_ip.read().unwrap(), config.remote_port)
             .parse()
             .unwrap();
 
-    // Start UDP connection
-    let udp_remote_ip = remote_ip.clone();
-    tokio::spawn(udp::transfer_udp(
-        client_socket.clone(),
-        remote_socket.port(),
-        udp_remote_ip,
-    ));
-
-    // Start TCP connection
-    loop {
-        match tcp_listener.accept().await {
-            Ok((inbound, _)) => {
-                remote_socket = format!("{}:{}", &(remote_ip.read().unwrap()), config.remote_port)
-                    .parse()
-                    .unwrap();
-                let transfer = transfer_tcp(inbound, remote_socket.clone()).map(|r| {
-                    if let Err(_) = r {
-                        return;
-                    }
-                });
-                tokio::spawn(transfer);
+    // Start UDP connection if needed
+    if config.protocol.len() == 0 {
+        tokio::spawn(udp::transfer_udp(
+            client_socket,
+            remote_socket.port(),
+            remote_ip.clone(),
+        ));
+    }
+    // Start UDP connection if needed
+    if config.protocol == "udp" {
+        loop {
+            match udp::transfer_udp(client_socket, remote_socket.port(), remote_ip.clone()).await {
+                Ok(_) => {}
+                Err(e) => {
+                    println!(
+                        "UDP forward error {}:{}, {}",
+                        config.remote_address, config.remote_port, e
+                    );
+                    break;
+                }
             }
-            Err(e) => {
-                println!(
-                    "TCP forward error {}:{}, {}",
-                    config.remote_address, config.remote_port, e
-                );
-                break;
+        }
+    }
+
+    // Start TCP connection if needed
+    if config.protocol.len() == 0 || config.protocol == "tcp" {
+        let tcp_listener = net::TcpListener::bind(&client_socket).await.unwrap();
+        loop {
+            match tcp_listener.accept().await {
+                Ok((inbound, _)) => {
+                    remote_socket =
+                        format!("{}:{}", &(remote_ip.read().unwrap()), config.remote_port)
+                            .parse()
+                            .unwrap();
+                    let transfer = transfer_tcp(inbound, remote_socket.clone()).map(|r| {
+                        if let Err(_) = r {
+                            return;
+                        }
+                    });
+                    tokio::spawn(transfer);
+                }
+                Err(e) => {
+                    println!(
+                        "TCP forward error {}:{}, {}",
+                        config.remote_address, config.remote_port, e
+                    );
+                    break;
+                }
             }
         }
     }
