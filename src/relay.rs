@@ -6,15 +6,14 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock};
 use tokio;
 use tokio::io;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net;
-
 
 use crate::resolver;
 use crate::udp;
 use realm::RelayConfig;
-use tokio::net::tcp::{ReadHalf, WriteHalf};
 use std::fs::read;
+use tokio::net::tcp::{ReadHalf, WriteHalf};
 
 // Initialize DNS recolver
 // Set up channel between listener and resolver
@@ -48,42 +47,61 @@ pub async fn run(config: RelayConfig, remote_ip: Arc<RwLock<IpAddr>>) {
         format!("{}:{}", config.listening_address, config.listening_port)
             .parse()
             .unwrap();
-    let tcp_listener = net::TcpListener::bind(&client_socket).await.unwrap();
 
     let mut remote_socket: SocketAddr =
         format!("{}:{}", remote_ip.read().unwrap(), config.remote_port)
             .parse()
             .unwrap();
 
-    // Start UDP connection
-    let udp_remote_ip = remote_ip.clone();
-    tokio::spawn(udp::transfer_udp(
-        client_socket.clone(),
-        remote_socket.port(),
-        udp_remote_ip,
-    ));
-
-    // Start TCP connection
-    loop {
-        match tcp_listener.accept().await {
-            Ok((inbound, _)) => {
-                inbound.set_nodelay(true).unwrap();
-                remote_socket = format!("{}:{}", &(remote_ip.read().unwrap()), config.remote_port)
-                    .parse()
-                    .unwrap();
-                let transfer = transfer_tcp(inbound, remote_socket.clone()).map(|r| {
-                    if let Err(_) = r {
-                        return;
-                    }
-                });
-                tokio::spawn(transfer);
+    // Start UDP connection if needed
+    if config.protocol.len() == 0 {
+        tokio::spawn(udp::transfer_udp(
+            client_socket,
+            remote_socket.port(),
+            remote_ip.clone(),
+        ));
+    }
+    // Start UDP connection if needed
+    if config.protocol == "udp" {
+        loop {
+            match udp::transfer_udp(client_socket, remote_socket.port(), remote_ip.clone()).await {
+                Ok(_) => {}
+                Err(e) => {
+                    println!(
+                        "UDP forward error {}:{}, {}",
+                        config.remote_address, config.remote_port, e
+                    );
+                    break;
+                }
             }
-            Err(e) => {
-                println!(
-                    "TCP forward error {}:{}, {}",
-                    config.remote_address, config.remote_port, e
-                );
-                break;
+        }
+    }
+
+    // Start TCP connection if needed
+    if config.protocol.len() == 0 || config.protocol == "tcp" {
+        let tcp_listener = net::TcpListener::bind(&client_socket).await.unwrap();
+        loop {
+            match tcp_listener.accept().await {
+                Ok((inbound, _)) => {
+                    inbound.set_nodelay(true).unwrap();
+                    remote_socket =
+                        format!("{}:{}", &(remote_ip.read().unwrap()), config.remote_port)
+                            .parse()
+                            .unwrap();
+                    let transfer = transfer_tcp(inbound, remote_socket.clone()).map(|r| {
+                        if let Err(_) = r {
+                            return;
+                        }
+                    });
+                    tokio::spawn(transfer);
+                }
+                Err(e) => {
+                    println!(
+                        "TCP forward error {}:{}, {}",
+                        config.remote_address, config.remote_port, e
+                    );
+                    break;
+                }
             }
         }
     }
@@ -115,7 +133,10 @@ async fn transfer_tcp(
     Ok(())
 }
 
-async fn copy_data(reader: &mut ReadHalf<'_>, writer: &mut WriteHalf<'_>) -> Result<(), std::io::Error> {
+async fn copy_data(
+    reader: &mut ReadHalf<'_>,
+    writer: &mut WriteHalf<'_>,
+) -> Result<(), std::io::Error> {
     let mut buf = vec![0u8; 0x4000];
     let mut n: usize;
 
