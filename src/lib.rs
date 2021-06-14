@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use structopt::StructOpt;
 
+const VALID_PROTOCOLS: &'static [&'static str] = &["tcp", "udp"];
+
 #[derive(StructOpt)]
 #[structopt(name = "realm", about = "A high efficiency proxy tool.")]
 pub struct Cli {
@@ -27,6 +29,7 @@ pub struct RelayConfig {
     pub listening_port: String,
     pub remote_address: String,
     pub remote_port: String,
+    pub protocol: String,
 }
 
 impl Default for RelayConfig {
@@ -36,6 +39,7 @@ impl Default for RelayConfig {
             listening_port: String::from("1080"),
             remote_address: String::from("127.0.0.1"),
             remote_port: String::from("8080"),
+            protocol: String::from(""),
         }
     }
 }
@@ -47,6 +51,7 @@ impl RelayConfig {
             listening_port: lp,
             remote_address: rd,
             remote_port: rp,
+            protocol: String::from(""),
         }
     }
 }
@@ -75,7 +80,21 @@ pub fn parse_arguments() -> Vec<RelayConfig> {
     };
 
     for it in listen {
-        let listen_parse: Vec<&str> = it.split("/").collect();
+        let protocol_parse: Vec<&str> = it.split("://").collect();
+        let protocol = if protocol_parse.len() == 2 {
+            let protocol = String::from_str(protocol_parse[0]).unwrap().to_lowercase();
+            if !VALID_PROTOCOLS.contains(&protocol.as_str()) {
+                panic!("protocol must be {} !", VALID_PROTOCOLS.join(" or "))
+            }
+            protocol
+        } else {
+            String::from("")
+        };
+        let listen_parse: Vec<&str> = if protocol_parse.len() == 2 {
+            protocol_parse[1].split("/").collect()
+        } else {
+            protocol_parse[0].split("/").collect()
+        };
         if listen_parse.len() != 2 {
             panic!("listen config is incorrect!");
         }
@@ -100,6 +119,7 @@ pub fn parse_arguments() -> Vec<RelayConfig> {
             listening_port: String::from_str(client_parse[1]).unwrap(),
             remote_address: String::from_str(remote_parse[0]).unwrap(),
             remote_port: String::from_str(remote_parse[1]).unwrap(),
+            protocol: protocol,
         })
     }
 

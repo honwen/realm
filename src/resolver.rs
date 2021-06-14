@@ -57,8 +57,8 @@ pub async fn resolve(addr_list: Vec<String>, ip_list: Vec<Arc<RwLock<net::IpAddr
     }
 }
 
-pub fn print_ips(ip_list: &Vec<Arc<RwLock<std::net::IpAddr>>>) {
-    for ip in ip_list {
-        println!("{}", ip.read().unwrap());
-    }
-}
+// pub fn print_ips(ip_list: &Vec<Arc<RwLock<std::net::IpAddr>>>) {
+//     for ip in ip_list {
+//         println!("{}", ip.read().unwrap());
+//     }
+// }
