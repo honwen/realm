@@ -39,3 +39,11 @@ An example to listen on port 30000 and forwarding traffic to example.com:12345 i
 ```bash
 ./realm -L=127.0.0.1:30000/example.com:12345 -L=127.0.0.1:40000/example.com:23456
 ```
+
+## Docker
+
+- https://hub.docker.com/r/chenhw2/realm
+
+```bash
+docker run -p 6666:6666 -p 6666:6666/udp -e ARGS='-L=:6666/8.8.8.8:53' chenhw2/realm
+```
