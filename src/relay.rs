@@ -4,16 +4,13 @@ use futures::FutureExt;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock};
-use tokio;
-use tokio::io;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+use tokio::io::AsyncWriteExt;
 use tokio::net;
 
 use crate::resolver;
 use crate::udp;
 use realm::RelayConfig;
-use std::fs::read;
-use tokio::net::tcp::{ReadHalf, WriteHalf};
 
 // Initialize DNS recolver
 // Set up channel between listener and resolver
@@ -137,7 +134,10 @@ async fn transfer_tcp(
 }
 
 #[cfg(not(target_os = "linux"))]
-async fn copy_data(reader: &mut ReadHalf<'_>, writer: &mut WriteHalf<'_>) -> Result<(), std::io::Error> {
+async fn copy_data(
+    reader: &mut ReadHalf<'_>,
+    writer: &mut WriteHalf<'_>,
+) -> Result<(), std::io::Error> {
     let mut buf = vec![0u8; 0x4000];
     let mut n: usize;
 
